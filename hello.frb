@@ -1,3 +1,7 @@
 get "/hi" do
-	"Hello World!"
+	if var == true
+		"Hello World!"
+	else
+		2 + 2
+	end
 end

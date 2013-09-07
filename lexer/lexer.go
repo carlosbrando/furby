@@ -1,6 +1,11 @@
+// Copyright 2013 Carlos Brando. All rights reserved.
+// Use of this source code is governed by a MIT license
+// that can be found in the LICENSE file.
+
 package lexer
 
 import (
+	"regexp"
 	"strings"
 )
 
@@ -10,6 +15,8 @@ type Token struct {
 	length    int
 	matched   bool
 }
+
+var whitespaceRegex = regexp.MustCompile(`\A\s+`)
 
 func Tokenize(code string) [][]string {
 	// cleanup code by remove extra line breaks
@@ -40,6 +47,26 @@ func Tokenize(code string) [][]string {
 
 		if !token.matched {
 			token = findString(chunk)
+		}
+
+		// ...
+
+		if !token.matched {
+			token = findOperator(chunk)
+		}
+
+		if !token.matched {
+			if m := whitespaceRegex.FindString(chunk); m != "" {
+				i += len(m)
+				continue // ignore whitespace
+			}
+		}
+
+		// catch all single characters
+		// we treat all other single characters as a token. Eg.: ( ) , . ! + - <
+		if !token.matched {
+			value := chunk[:1]
+			token = Token{value, value, 1, true}
 		}
 
 		// if a token was found add it to the stack
