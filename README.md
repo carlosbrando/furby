@@ -1,4 +1,4 @@
 furby
 =====
 
-> "Don't let them out in daylight, don't let them near water, and whatever you do, dont feed them after midnight."
+> Keep them out of the light, don't give them any water, and the rule you can never forget, never feed them after midnight.
