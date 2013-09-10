@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 
 	"github.com/carlosbrando/furby/lexer"
+	"github.com/carlosbrando/furby/parse"
 )
 
 func check(e error) {
@@ -24,4 +25,7 @@ func main() {
 
 	tokens := lexer.Tokenize(string(code))
 	fmt.Println(tokens)
+
+	// The all new code.
+	parse.Parse("hello.frb", string(code))
 }

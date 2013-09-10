@@ -2,8 +2,11 @@
 // Use of this source code is governed by a MIT license
 // that can be found in the LICENSE file.
 
-package new_lexer
+package parse
 
-// stateFn represents the state of the scanner
-// as a function that returns the next state.
-type stateFn func(*lexer) stateFn
+type Tree struct {
+}
+
+func Parse(name, text string) {
+	lex(name, text)
+}
