@@ -4,9 +4,14 @@
 
 package parse
 
+import (
+	"fmt"
+)
+
 type Tree struct {
 }
 
 func Parse(name, text string) {
-	lex(name, text)
+	x := lex(name, text)
+	fmt.Println(x.input)
 }
