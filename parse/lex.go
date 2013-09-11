@@ -50,7 +50,8 @@ const (
 	// itemRawString  // raw quoted string (includes quotes)
 	// itemRightDelim // right action delimiter
 	// itemRightParen // ')' inside action
-	// itemSpace      // run of spaces separating arguments
+	itemSpace // run of spaces separating arguments
+	itemEndOfLine
 	// itemString     // quoted string (includes quotes)
 	// itemText 			// plain text
 	// itemVariable   // variable starting with '$', such as '$' or  '$1' or '$hello'
@@ -97,9 +98,23 @@ func (l *lexer) next() rune {
 	return r
 }
 
+// peek returns but does not consume the next rune in the input.
+func (l *lexer) peek() rune {
+	r := l.next()
+	l.backup()
+	return r
+}
+
+// backup steps back one rune. Can only be called once per call of next.
+func (l *lexer) backup() {
+	l.pos -= l.width
+}
+
 // emit passes an item back to the client.
 func (l *lexer) emit(t itemType) {
-	l.items <- item{t, l.start, l.input[l.start:l.pos]}
+	fmt.Println(item{t, l.start, l.input[l.start:l.pos]})
+	// TODO: Remove above and leave below
+	// l.items <- item{t, l.start, l.input[l.start:l.pos]}
 	l.start = l.pos
 }
 
@@ -117,7 +132,6 @@ func lex(name, input string) *lexer {
 
 // run runs the state machine for the lexer.
 func (l *lexer) run() {
-	// for l.state = lexText; l.state != nil; {
 	for l.state = lexAction; l.state != nil; {
 		l.state = l.state(l)
 	}
@@ -125,7 +139,7 @@ func (l *lexer) run() {
 
 // state functions
 
-// lexAction scans the elements inside action delimiters.
+// lexAction scans all the elements.
 func lexAction(l *lexer) stateFn {
 	// Either number, quoted string, or identifier.
 	// Spaces separate arguments; runs of spaces turn into itemSpace.
@@ -137,11 +151,13 @@ func lexAction(l *lexer) stateFn {
 	// 	return l.errorf("unclosed left paren")
 	// }
 	switch r := l.next(); {
-	case r == eof: // || isEndOfLine(r):
+	case r == eof:
+		close(l.items) // TODO: Remove
 		return nil
-		// return l.errorf("unclosed action")
-	// case isSpace(r):
-	// 	return lexSpace
+	case isEndOfLine(r):
+		l.emit(itemEndOfLine)
+	case isSpace(r):
+		return lexSpace
 	// case r == ':':
 	// 	if l.next() != '=' {
 	// 		return l.errorf("expected :=")
@@ -169,9 +185,9 @@ func lexAction(l *lexer) stateFn {
 	// case r == '+' || r == '-' || ('0' <= r && r <= '9'):
 	// 	l.backup()
 	// 	return lexNumber
-	// case isAlphaNumeric(r):
-	// 	l.backup()
-	// 	return lexIdentifier
+	case isAlphaNumeric(r):
+		l.backup()
+		return lexIdentifier
 	// case r == '(':
 	// 	l.emit(itemLeftParen)
 	// 	l.parenDepth++
@@ -187,8 +203,62 @@ func lexAction(l *lexer) stateFn {
 	// 	l.emit(itemChar)
 	// 	return lexAction
 	default:
-		fmt.Println(string(r))
+		// fmt.Println(string(r))
 		// return l.errorf("unrecognized character in action: %#U", r)
 	}
 	return lexAction
+}
+
+// lexSpace scans a run of space characters.
+// One space has already been seen.
+func lexSpace(l *lexer) stateFn {
+	for isSpace(l.peek()) {
+		l.next()
+	}
+	l.emit(itemSpace)
+	return lexAction
+}
+
+// lexIdentifier scans an alphanumeric.
+func lexIdentifier(l *lexer) stateFn {
+Loop:
+	for {
+		switch r := l.next(); {
+		case isAlphaNumeric(r):
+			// absorb.
+		default:
+			l.backup()
+			word := l.input[l.start:l.pos]
+			if !l.atTerminator() {
+				return l.errorf("bad character %#U", r)
+			}
+			switch {
+			case key[word] > itemKeyword:
+				l.emit(key[word])
+			case word[0] == '.':
+				l.emit(itemField)
+			case word == "true", word == "false":
+				l.emit(itemBool)
+			default:
+				l.emit(itemIdentifier)
+			}
+			break Loop
+		}
+	}
+	return lexInsideAction
+}
+
+// isSpace reports whether r is a space character.
+func isSpace(r rune) bool {
+	return r == ' ' || r == '\t'
+}
+
+// isEndOfLine reports whether r is an end-of-line character.
+func isEndOfLine(r rune) bool {
+	return r == '\r' || r == '\n'
+}
+
+// isAlphaNumeric reports whether r is an alphabetic, digit, or underscore.
+func isAlphaNumeric(r rune) bool {
+	return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r)
 }

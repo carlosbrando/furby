@@ -5,13 +5,17 @@
 package parse
 
 import (
-	"fmt"
+// "fmt"
 )
 
 type Tree struct {
 }
 
 func Parse(name, text string) {
-	x := lex(name, text)
-	fmt.Println(x.input)
+	lex(name, text)
+	// fmt.Println(x.input)
+
+	// for elem := range x.items {
+	// 	fmt.Println(elem)
+	// }
 }
