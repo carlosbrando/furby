@@ -6,6 +6,8 @@ package parse
 
 import (
 	"fmt"
+	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -35,17 +37,17 @@ type itemType int
 
 const (
 	itemError itemType = iota // error occurred; value is text of error
-	// itemBool                         // boolean constant
+	itemBool                  // boolean constant
 	// itemChar                         // printable ASCII character; grab bag for comma etc.
 	// itemCharConstant                 // character constant
-	// itemComplex                      // complex constant (1+2i); imaginary is just a number
+	itemComplex // complex constant (1+2i); imaginary is just a number
 	// itemColonEquals                  // colon-equals (':=') introducing a declaration
 	itemEOF
-	// itemField      // alphanumeric identifier starting with '.'
-	// itemIdentifier // alphanumeric identifier not starting with '.'
+	itemField      // alphanumeric identifier starting with '.'
+	itemIdentifier // alphanumeric identifier not starting with '.'
 	// itemLeftDelim  // left action delimiter
 	// itemLeftParen  // '(' inside action
-	// itemNumber     // simple number, including imaginary
+	itemNumber // simple number, including imaginary
 	// itemPipe       // pipe symbol
 	// itemRawString  // raw quoted string (includes quotes)
 	// itemRightDelim // right action delimiter
@@ -59,14 +61,26 @@ const (
 	itemKeyword // used only to delimit the keywords
 	// itemDot      // the cursor, spelled '.'
 	// itemDefine   // define keyword
-	// itemElse     // else keyword
-	// itemEnd      // end keyword
-	// itemIf       // if keyword
-	// itemNil      // the untyped nil constant, easiest to treat as a keyword
+	itemElse // else keyword
+	itemEnd  // end keyword
+	itemIf   // if keyword
+	itemNil  // the untyped nil constant, easiest to treat as a keyword
 	// itemRange    // range keyword
 	// itemTemplate // template keyword
 	// itemWith     // with keyword
 )
+
+var key = map[string]itemType{
+	// ".": itemDot,
+	// "define":   itemDefine,
+	"else": itemElse,
+	"end":  itemEnd,
+	"if":   itemIf,
+	// "range":    itemRange,
+	"nil": itemNil,
+	// "template": itemTemplate,
+	// "with": itemWith,
+}
 
 const eof = -1
 
@@ -113,9 +127,38 @@ func (l *lexer) backup() {
 // emit passes an item back to the client.
 func (l *lexer) emit(t itemType) {
 	fmt.Println(item{t, l.start, l.input[l.start:l.pos]})
+	fmt.Println("----------")
+	// fmt.Println(l.input[l.start:l.pos])
+	// for item := range l.items {
+	// 	fmt.Println(item)
+	// }
 	// TODO: Remove above and leave below
 	// l.items <- item{t, l.start, l.input[l.start:l.pos]}
 	l.start = l.pos
+}
+
+// accept consumes the next rune if it's from the valid set.
+func (l *lexer) accept(valid string) bool {
+	if strings.IndexRune(valid, l.next()) >= 0 {
+		return true
+	}
+	l.backup()
+	return false
+}
+
+// acceptRun consumes a run of runes from the valid set.
+func (l *lexer) acceptRun(valid string) {
+	for strings.IndexRune(valid, l.next()) >= 0 {
+	}
+	l.backup()
+}
+
+// errorf returns an error token and terminates the scan by passing
+// back a nil pointer that will be the next state, terminating l.nextItem.
+func (l *lexer) errorf(format string, args ...interface{}) stateFn {
+	fmt.Println(item{itemError, l.start, fmt.Sprintf(format, args...)})
+	// l.items <- item{itemError, l.start, fmt.Sprintf(format, args...)}
+	return nil
 }
 
 // lex creates a new scanner for the input string.
@@ -144,15 +187,8 @@ func lexAction(l *lexer) stateFn {
 	// Either number, quoted string, or identifier.
 	// Spaces separate arguments; runs of spaces turn into itemSpace.
 	// Pipe symbols separate and are emitted.
-	// if strings.HasPrefix(l.input[l.pos:], l.rightDelim) {
-	// 	if l.parenDepth == 0 {
-	// 		return lexRightDelim
-	// 	}
-	// 	return l.errorf("unclosed left paren")
-	// }
 	switch r := l.next(); {
 	case r == eof:
-		close(l.items) // TODO: Remove
 		return nil
 	case isEndOfLine(r):
 		l.emit(itemEndOfLine)
@@ -182,9 +218,9 @@ func lexAction(l *lexer) stateFn {
 	// 		}
 	// 	}
 	// 	fallthrough // '.' can start a number.
-	// case r == '+' || r == '-' || ('0' <= r && r <= '9'):
-	// 	l.backup()
-	// 	return lexNumber
+	case r == '+' || r == '-' || ('0' <= r && r <= '9'):
+		l.backup()
+		return lexNumber
 	case isAlphaNumeric(r):
 		l.backup()
 		return lexIdentifier
@@ -219,6 +255,57 @@ func lexSpace(l *lexer) stateFn {
 	return lexAction
 }
 
+// lexNumber scans a number: decimal, octal, hex, float, or imaginary. This
+// isn't a perfect number scanner - for instance it accepts "." and "0x0.2"
+// and "089" - but when it's wrong the input is invalid and the parser (via
+// strconv) will notice.
+func lexNumber(l *lexer) stateFn {
+	if !l.scanNumber() {
+		return l.errorf("bad number syntax: %q", l.input[l.start:l.pos])
+	}
+	if sign := l.peek(); sign == '+' || sign == '-' {
+		// Complex: 1+2i. No spaces, must end in 'i'.
+		if !l.scanNumber() || l.input[l.pos-1] != 'i' {
+			return l.errorf("bad number syntax: %q", l.input[l.start:l.pos])
+		}
+		l.emit(itemComplex)
+	} else {
+		l.emit(itemNumber)
+	}
+	return lexAction
+}
+
+func (l *lexer) scanNumber() bool {
+	// Optional leading sign.
+	l.accept("+-")
+	// Is it hex?
+	digits := "0123456789"
+	if l.accept("0") && l.accept("xX") {
+		digits = "0123456789abcdefABCDEF"
+	}
+	l.acceptRun(digits)
+	if l.accept(".") {
+		l.acceptRun(digits)
+	}
+	if l.accept("eE") {
+		l.accept("+-")
+		l.acceptRun("0123456789")
+	}
+	// Is it imaginary?
+	l.accept("i")
+	// Next thing mustn't be alphanumeric.
+	if isAlphaNumeric(l.peek()) {
+		l.next()
+		return false
+	}
+	return true
+}
+
+// isSpace reports whether r is a space character.
+func isSpace(r rune) bool {
+	return r == ' ' || r == '\t'
+}
+
 // lexIdentifier scans an alphanumeric.
 func lexIdentifier(l *lexer) stateFn {
 Loop:
@@ -245,12 +332,23 @@ Loop:
 			break Loop
 		}
 	}
-	return lexInsideAction
+	return lexAction
 }
 
-// isSpace reports whether r is a space character.
-func isSpace(r rune) bool {
-	return r == ' ' || r == '\t'
+// atTerminator reports whether the input is at valid termination character to
+// appear after an identifier. Breaks .X.Y into two pieces. Also catches cases
+// like "$x+2" not being acceptable without a space, in case we decide one
+// day to implement arithmetic.
+func (l *lexer) atTerminator() bool {
+	r := l.peek()
+	if isSpace(r) || isEndOfLine(r) {
+		return true
+	}
+	switch r {
+	case eof, '.', ',', '|', ':', ')', '(':
+		return true
+	}
+	return false
 }
 
 // isEndOfLine reports whether r is an end-of-line character.

@@ -1,7 +1,5 @@
-get "/hi" do
-	if var == true
-		"Hello World!"
-	else
-		2 + 2
-	end
+if var == true
+  2 + 2
+else
+  nil
 end

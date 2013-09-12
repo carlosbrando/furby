@@ -27,6 +27,6 @@ func main() {
 	fmt.Println(tokens)
 
 	// The all new code.
-	fmt.Println("\n---")
+	fmt.Println("\n----------")
 	parse.Parse("hello.frb", string(code))
 }
