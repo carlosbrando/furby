@@ -28,5 +28,12 @@ func main() {
 
 	// The all new code.
 	fmt.Println("\n----------")
-	parse.Parse("hello.frb", string(code))
+	treeSet, err := parse.Parse("hello.frb", string(code))
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	for set := range treeSet {
+		fmt.Println(set)
+	}
 }

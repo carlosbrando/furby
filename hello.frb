@@ -1,5 +1,2 @@
-if var == true
-  2 + 2
-else
-  nil
-end
+puts 2
+puts 3
